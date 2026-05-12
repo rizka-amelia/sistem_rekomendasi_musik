@@ -218,7 +218,12 @@ def rekomendasikan_lagu_app(judul_lagu, k=10):
 
 
 def evaluasi_rekomendasi(judul, k):
-    """Hitung Precision@K, Recall@K, F1@K untuk satu lagu."""
+    """Hitung Precision@K, Recall@K, F1@K untuk satu lagu.
+    
+    Rumus:
+    - Precision@K = TP / (TP + FP) = TP / K
+    - Recall@K    = TP / (TP + FN) = TP / Total_Relevan
+    """
     if model_data is None:
         return {}
 
@@ -232,7 +237,7 @@ def evaluasi_rekomendasi(judul, k):
 
     genres_input = get_genres_set(df.iloc[idx]['Genres'])
     if not genres_input:
-        return {'precision': 0, 'recall': 0, 'f1': 0, 'TP': 0, 'total_relevan': 0, 'K': k}
+        return {'precision': 0, 'recall': 0, 'f1': 0, 'TP': 0, 'FP': 0, 'FN': 0, 'total_relevan': 0, 'K': k}
 
     # ── fix: unpack 3 nilai ──
     recs, inp_info, _ = rekomendasikan_lagu_app(judul, k=k)
@@ -242,11 +247,15 @@ def evaluasi_rekomendasi(judul, k):
     TP = sum(bool(genres_input & get_genres_set(row['Genres']))
              for _, row in recs.iterrows())
 
+    FP = k - TP  # False Positive = rekomendasi tidak relevan
+
     total_relevan = sum(
         1 for _, row in df.iterrows()
         if get_genres_set(row['Genres']) & genres_input
         and row[track_col] != judul
     )
+
+    FN = total_relevan - TP  # False Negative = lagu relevan yang tidak masuk top-K
 
     precision = TP / k if k > 0 else 0
     recall    = TP / total_relevan if total_relevan > 0 else 0
@@ -255,7 +264,7 @@ def evaluasi_rekomendasi(judul, k):
 
     return {
         'precision': precision, 'recall': recall, 'f1': f1,
-        'TP': TP, 'total_relevan': total_relevan, 'K': k
+        'TP': TP, 'FP': FP, 'FN': FN, 'total_relevan': total_relevan, 'K': k
     }
 
 
