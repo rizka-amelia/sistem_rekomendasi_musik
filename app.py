@@ -387,6 +387,7 @@ with st.sidebar:
     for feat in ["🎤 Danceability", "⚡ Energy", "🔊 Loudness",
                  "🗣️ Speechiness", "🎸 Acousticness", "🎻 Instrumentalness",
                  "🎭 Liveness", "😊 Valence", "⏱️ Tempo"]:
+        st.markdown(f"  `{feat}`")lence", "⏱️ Tempo"]:
         st.markdown(f"  `{feat}`")
 
 # ── cek model ──────────────────────────────────────────────
