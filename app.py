@@ -9,7 +9,7 @@ import numpy as np
 import pickle
 import re
 import os
-
+import matplotlib.pyplot as plt
 
 # ── konfigurasi Halaman ────────────────────────────────────
 st.set_page_config(
