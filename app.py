@@ -579,12 +579,16 @@ with tab2:
             st.code(
                 f"Lagu Input    : {eval_song}\n"
                 f"K             : {k_eval}\n"
-                f"TP (relevan)  : {ev['TP']}\n"
+                f"TP            : {ev['TP']} (rekomendasi relevan)\n"
+                f"FP            : {ev['FP']} (rekomendasi tidak relevan)\n"
+                f"FN            : {ev['FN']} (relevan tidak masuk top-K)\n"
                 f"Total Relevan : {ev['total_relevan']:,}\n\n"
-                f"Precision@{k_eval} = TP / K\n"
+                f"Precision@{k_eval} = TP / (TP + FP)\n"
+                f"             = {ev['TP']} / ({ev['TP']} + {ev['FP']})\n"
                 f"             = {ev['TP']} / {k_eval}\n"
                 f"             = {ev['precision']:.4f}\n\n"
-                f"Recall@{k_eval}    = TP / Total Relevan dalam Dataset\n"
+                f"Recall@{k_eval}    = TP / (TP + FN)\n"
+                f"             = {ev['TP']} / ({ev['TP']} + {ev['FN']})\n"
                 f"             = {ev['TP']} / {ev['total_relevan']}\n"
                 f"             = {ev['recall']:.8f}\n\n"
                 f"F1@{k_eval}        = 2 x (P x R) / (P + R)\n"
@@ -612,45 +616,6 @@ with tab2:
                 st.dataframe(pd.DataFrame(data_tabel), use_container_width=True)
         else:
             st.warning("Tidak dapat menghitung evaluasi untuk lagu ini.")
-
-    st.markdown("---")
-    st.markdown("### 📊 Evaluasi Batch (Multiple Lagu)")
-    n_batch = st.slider("Jumlah lagu yang dievaluasi", 5, 50, 10)
-    k_batch = st.number_input("K untuk batch evaluasi", 1, 20, 10, key='k_batch')
-
-    if st.button("🚀 Jalankan Evaluasi Batch"):
-        sample_songs  = all_songs[:n_batch]
-        batch_results = []
-        progress      = st.progress(0)
-
-        for i, song in enumerate(sample_songs):
-            res = evaluasi_rekomendasi(song, k=k_batch)
-            if res:
-                batch_results.append({
-                    'Judul Lagu'            : song,
-                    'TP'                    : res['TP'],
-                    f'Precision@{k_batch}'  : round(res['precision'], 4),
-                    f'Recall@{k_batch}'     : round(res['recall'],    6),
-                    f'F1@{k_batch}'         : round(res['f1'],        4),
-                })
-            progress.progress((i + 1) / len(sample_songs))
-
-        if batch_results:
-            batch_df = pd.DataFrame(batch_results)
-            st.dataframe(batch_df, use_container_width=True)
-
-            avg    = batch_df[[f'Precision@{k_batch}', f'Recall@{k_batch}', f'F1@{k_batch}']].mean()
-            b1, b2, b3 = st.columns(3)
-            b1.metric(f"Avg Precision@{k_batch}", f"{avg[f'Precision@{k_batch}']:.4f}")
-            b2.metric(f"Avg Recall@{k_batch}",    f"{avg[f'Recall@{k_batch}']:.6f}")
-            b3.metric(f"Avg F1@{k_batch}",        f"{avg[f'F1@{k_batch}']:.4f}")
-
-            st.download_button(
-                "📥 Download Hasil Evaluasi Batch",
-                batch_df.to_csv(index=False),
-                "evaluasi_batch.csv", "text/csv"
-            )
-
 
 # ════════════════════════════════
 # EKSPLORASI DATA
@@ -729,19 +694,61 @@ Dataset CSV
 
     st.markdown("---")
 
-    # ── 0. kolom yang dihapus ─────────────────────────────
+    # ── 0. kolom yang digunakan ─────────────────────────
+    st.markdown("#### 📋 Kolom yang Digunakan untuk Rekomendasi")
+    st.markdown(
+        "Sistem rekomendasi ini menggunakan kombinasi **fitur teks** dan **fitur audio**:"
+    )
+    st.markdown("""
+| No | Jenis Fitur | Kolom | Keterangan |
+|---|---|---|---|
+| **FITUR TEKS** |||
+| 1 | TF-IDF | `Track Name` | Judul lagu (sebagai dokumen) |
+| 2 | TF-IDF | `Artist Name(s)` | Nama artis |
+| 3 | TF-IDF | `Genres` | Genre lagu (fitur utama) |
+| **FITUR AUDIO** |||
+| 4 | Numerik | `Danceability` | Seberapa mudah di Dance (0-1) |
+| 5 | Numerik | `Energy` | Intensitas & ketegangan (0-1) |
+| 6 | Numerik | `Loudness` | Kekerasan suara (-60 s/d 0 dB) |
+| 7 | Numerik | `Speechiness` | Kata-kata yang diucapkan (0-1) |
+| 8 | Numerik | `Acousticness` | Suara akustik (0-1) |
+| 9 | Numerik | `Instrumentalness` | Tanpa vokal (0-1) |
+| 10 | Numerik | `Liveness` | Kehadiran live (0-1) |
+| 11 | Numerik | `Valence` | Suasana positif (0-1) |
+| 12 | Numerik | `Tempo` | Kecepatan lagu (BPM) |
+""")
+    st.caption("💡 Total: 3 fitur teks (TF-IDF) + 9 fitur audio = 12 fitur yang digabungkan untuk Cosine Similarity")
+
+    st.markdown("---")
+
+    # ── 0b. kolom yang dihapus ─────────────────────────────
     st.markdown("#### 🗑️ Kolom yang Dihapus saat Data Cleaning")
     st.markdown(
         "Dataset awal memiliki banyak kolom yang **tidak relevan** untuk sistem rekomendasi berbasis konten. "
         "Kolom-kolom berikut dihapus karena tidak digunakan sebagai fitur:"
     )
-    col_del1, col_del2 = st.columns(2)
-    with col_del1:
-        st.markdown("""
-| Kolom Dihapus | Alasan |
-|---|---|
-| `Track ID` | ID internal, bukan fitur konten |
-| `Mode` | Digantikan fitur audio lainnya |
+    st.markdown("""
+| No | Kolom Dihapus | Alasan |
+|---|---|---|
+| 1 | `Track ID` | ID internal Spotify, bukan fitur konten |
+| 2 | `Track URI` | Link URL, bukan fitur konten |
+| 3 | `Artist URI(s)` | ID internal, bukan fitur konten |
+| 4 | `Album URI` | ID internal, bukan fitur konten |
+| 5 | `Album Artist Name(s)` | Duplikasi dengan Artist Name |
+| 6 | `Album Release Date` | Tidak relevan untuk rekomendasi |
+| 7 | `Disc Number` | Info album, bukan fitur musik |
+| 8 | `Track Number` | Info album, bukan fitur musik |
+| 9 | `ISRC` | Kode identifikasi standar |
+| 10 | `Key` | (Digabungkan ke audio features sudah termasuk) |
+| 11 | `Mode` | (Digantikan fitur audio lainnya) |
+| 12 | `Time Signature` | Info umum, tidak membedakan |
+| 13 | `Release Date` | Duplikasi Album Release Date |
+| 14 | `Duration (ms)` | Durasi tidak menentukan genre |
+| 15 | `Popularity` | Ranking tidak tetap, bias sistem |
+| 16 | `Explicit` | Rating bukan fitur musik |
+| 17 | `Added By` | Metadata koleksiku |
+| 18 | `Added At` | Metadata koleksiku |
+| 19 | `Record Label` | Tidak relevan untuk rekomendasi |
 """)
     st.caption("💡 Selain dihapus kolom, baris dengan nilai kosong (*missing values*) dan data duplikat juga dihapus.")
     st.markdown("---")
@@ -795,17 +802,27 @@ Dataset CSV
 
     st.markdown("**Precision@K** — dari K rekomendasi, berapa yang relevan?")
     st.latex(
-        r"\text{Precision at } K = "
-        r"\frac{\text{Number of relevant items in } K}"
-        r"{\text{Total number of items in } K}"
+        r"\text{Precision}@K = \frac{TP}{TP + FP}"
     )
+    st.markdown("""
+    Atau bisa ditulis: `TP / K` karena `K = TP + FP`
+    
+    - **TP** (True Positive) = rekomendasi yang relevan
+    - **FP** (False Positive) = rekomendasi yang TIDAK relevan
+    """)
+    st.markdown("---")
 
     st.markdown("**Recall@K** — dari semua lagu relevan di dataset, berapa yang berhasil direkomendasikan?")
     st.latex(
-        r"\text{Recall}@K = "
-        r"\frac{\text{Relevant items in Top-K}}"
-        r"{\text{Total relevant items}}"
+        r"\text{Recall}@K = \frac{TP}{TP + FN}"
     )
+    st.markdown("""
+    Atau bisa ditulis: `TP / Total_Relevan` karena `Total_Relevan = TP + FN`
+    
+    - **TP** (True Positive) = rekomendasi relevan dalam top-K
+    - **FN** (False Negative) = lagu relevan yang TIDAK masuk top-K
+    """)
+    st.markdown("---")
 
     st.markdown("**F1@K** — rata-rata harmonis antara Precision dan Recall.")
     st.latex(
@@ -815,23 +832,7 @@ Dataset CSV
     )
     st.markdown("---")
 
-    # ── Kolom yang dipakai ────────────────────────────────
-    st.markdown("#### 📋 Kolom yang Digunakan")
-    st.markdown("""
-| Kolom | Jenis | Peran |
-|---|---|---|
-| `Genres` | Teks | Fitur utama TF-IDF (bobot 60%) |
-| `Artist Name(s)` | Teks | Fitur pendukung TF-IDF (bobot 60%) |
-| `Danceability` | Audio | Dinormalisasi Min-Max → vektor audio (bobot 40%) |
-| `Energy` | Audio | Dinormalisasi Min-Max → vektor audio (bobot 40%) |
-| `Loudness` | Audio | Dinormalisasi Min-Max → vektor audio (bobot 40%) |
-| `Speechiness` | Audio | Dinormalisasi Min-Max → vektor audio (bobot 40%) |
-| `Acousticness` | Audio | Dinormalisasi Min-Max → vektor audio (bobot 40%) |
-| `Instrumentalness` | Audio | Dinormalisasi Min-Max → vektor audio (bobot 40%) |
-| `Liveness` | Audio | Dinormalisasi Min-Max → vektor audio (bobot 40%) |
-| `Valence` | Audio | Dinormalisasi Min-Max → vektor audio (bobot 40%) |
-| `Tempo` | Audio | Dinormalisasi Min-Max → vektor audio (bobot 40%) |
-""")
+   
 
 # ════════════════════════════════
 # ANALYTICS
